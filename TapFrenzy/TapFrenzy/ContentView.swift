@@ -9,72 +9,168 @@ import SwiftUI
 internal import Combine
 
 struct ContentView: View {
-    // Game variables that SwiftUI will watch and update on the screen automatically
     @State private var points = 0
     @State private var timeRemaining = 60
     @State private var gameStarted = false
     @State private var gameOver = false
     
-    // This is the timer clock that ticks every 1 second
+    // Position coordinates for the button
+    @State private var buttonX: CGFloat = 0
+    @State private var buttonY: CGFloat = 0
+    
+    // Size tracker for the button (starts at 150)
+    @State private var buttonSize: CGFloat = 150
+    
     let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        VStack(spacing: 40) {
-            
-            // 1. Points Tracker
-            Text("Points: \(points)")
-                .font(.largeTitle)
-                .fontWeight(.bold)
-                .padding(.top, 20)
-            
-            Spacer()
-            
-            // 2. The Game Button
-            Button(action: {
-                // This logic runs whenever the button is clicked
-                if !gameStarted {
-                    gameStarted = true // Start the countdown timer on the very first tap
-                }
+        GeometryReader { geometry in
+            ZStack { // ZStack lets us layer the Score Board directly on top of the game
                 
-                if !gameOver {
-                    points += 1 // Increase score by 1 point per tap if game is active
+                // --- LAYER 1: THE MAIN GAME ---
+                VStack {
+                    // Top Bar: Points and Time
+                    HStack {
+                        Text("Points: \(points)")
+                            .font(.title2)
+                            .bold()
+                        
+                        Spacer()
+                        
+                        Text("Time: \(timeRemaining)s")
+                            .font(.title2)
+                            .bold()
+                            .foregroundColor(timeRemaining <= 10 ? .red : .primary) // Turns red in last 10s
+                    }
+                    .padding()
+                    .background(Color(.systemBackground).opacity(0.8))
+                    
+                    // The Playable Area
+                    ZStack {
+                        // The Game Button
+                        Button(action: {
+                            if !gameStarted {
+                                gameStarted = true
+                                moveButtonRandomly(in: geometry.size)
+                            }
+                            
+                            if !gameOver {
+                                points += 1
+                                moveButtonRandomly(in: geometry.size)
+                            }
+                        }) {
+                            Text("Tap")
+                                .font(buttonSize > 80 ? .title : .body)
+                                .bold()
+                                .foregroundColor(.white)
+                                .frame(width: buttonSize, height: buttonSize)
+                                .background(Color.blue)
+                                .clipShape(Circle())
+                                .shadow(radius: 10)
+                        }
+                        .disabled(gameOver)
+                        .position(x: buttonX == 0 ? geometry.size.width / 2 : buttonX,
+                                  y: buttonY == 0 ? geometry.size.height / 2 : buttonY)
+                        .animation(.easeInOut(duration: 0.2), value: buttonX)
+                        .animation(.easeInOut(duration: 0.2), value: buttonSize)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-            }) {
-                Text(gameOver ? "Done!" : "Tap")
-                    .font(.title)
-                    .bold()
-                    .foregroundColor(.white)
-                    .frame(width: 150, height: 150)
-                    // The color automatically switches to red if gameOver is true, otherwise stays blue
-                    .background(gameOver ? Color.red : Color.blue)
-                    .clipShape(Circle())
-                    .shadow(radius: 10)
+                .blur(radius: gameOver ? 5 : 0) // Blurs out the game field when game over pops up!
+                
+                // --- LAYER 2: THE SCORE BOARD OVERLAY ---
+                if gameOver {
+                    Color.black.opacity(0.5) // Darkens the background slightly
+                        .ignoresSafeArea()
+                    
+                    VStack(spacing: 25) {
+                        Text("🏆 GAME OVER 🏆")
+                            .font(.largeTitle)
+                            .bold()
+                            .foregroundColor(.orange)
+                        
+                        Text("Final Score")
+                            .font(.headline)
+                            .foregroundColor(.secondary)
+                        
+                        Text("\(points)")
+                            .font(.system(size: 80, weight: .black, design: .rounded))
+                            .foregroundColor(.primary)
+                        
+                        Text(points > 40 ? "Frenzy Master! 🔥" : "Nice Try! 👍")
+                            .font(.subheadline)
+                            .italic()
+                        
+                        // Restart Button
+                        Button(action: {
+                            resetGame(in: geometry.size)
+                        }) {
+                            Text("Play Again")
+                                .font(.headline)
+                                .bold()
+                                .foregroundColor(.white)
+                                .padding()
+                                .frame(maxWidth: .infinity)
+                                .background(Color.green)
+                                .clipShape(RoundedRectangle(cornerRadius: 15))
+                                .shadow(radius: 5)
+                        }
+                        .padding(.horizontal, 20)
+                    }
+                    .padding(30)
+                    .background(Color(.systemBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 25))
+                    .shadow(radius: 20)
+                    .padding(40) // Keeps the popup away from the screen edge
+                    .transition(.scale.combined(with: .opacity)) // Smooth popup animation
+                }
             }
-            // This disables the button completely when gameOver is true
-            .disabled(gameOver)
-            
-            Spacer()
-            
-            // 3. Time Remaining Tracker
-            Text(gameOver ? "Game Over!" : "Time: \(timeRemaining)s")
-                .font(.title2)
-                .fontWeight(.medium)
-                .foregroundColor(gameOver ? .red : .secondary)
-                .padding(.bottom, 20)
-
+            .onAppear {
+                buttonX = geometry.size.width / 2
+                buttonY = geometry.size.height / 2
+            }
+            .onReceive(timer) { _ in
+                if gameStarted && timeRemaining > 0 {
+                    timeRemaining -= 1
+                    
+                    moveButtonRandomly(in: geometry.size)
+                    
+                    if buttonSize > 60 {
+                        buttonSize -= 1.5
+                    }
+                    
+                    if timeRemaining == 0 {
+                        withAnimation {
+                            gameOver = true
+                        }
+                    }
+                }
+            }
         }
-        .padding()
-        // This listens to our timer clock and handles the countdown logic
-        .onReceive(timer) { _ in
-            // Only countdown if the player has started the game and time hasn't run out
-            if gameStarted && timeRemaining > 0 {
-                timeRemaining -= 1
-                
-                // When time hits 0, trigger Game Over rules
-                if timeRemaining == 0 {
-                    gameOver = true
-                }
-            }
+    }
+    
+    // Calculates a safe random position on the screen
+    func moveButtonRandomly(in screenSize: CGSize) {
+        let padding: CGFloat = buttonSize / 2 + 20
+        let minX = padding
+        let maxX = screenSize.width - padding
+        let minY = padding + 80
+        let maxY = screenSize.height - padding
+        
+        buttonX = CGFloat.random(in: minX...maxX)
+        buttonY = CGFloat.random(in: minY...maxY)
+    }
+    
+    // Resets everything back to original state for a clean game
+    func resetGame(in screenSize: CGSize) {
+        withAnimation {
+            points = 0
+            timeRemaining = 60
+            buttonSize = 150
+            gameStarted = false
+            gameOver = false
+            buttonX = screenSize.width / 2
+            buttonY = screenSize.height / 2
         }
     }
 }
