@@ -2,9 +2,6 @@
 //  ContentView.swift
 //  TapFrenzy
 //
-//  Redesigned with: Constrained Box Area, Anti-Overlap Logic,
-//  Smooth Pop-up Animations, and Glassmorphism UI.
-//
 
 import SwiftUI
 internal import Combine
@@ -107,14 +104,17 @@ struct ContentView: View {
         GeometryReader { mainGeometry in
             ZStack {
                 // ── BACKGROUND ──────────────────────────────────────────
+                // Only the background ignores the safe area to cover the whole screen
                 meshBackground
+                    .ignoresSafeArea()
 
                 // ── GAME LAYER ──────────────────────────────────────────
                 VStack(spacing: 0) {
                     
                     // Top HUD
                     hudBar
-                        .padding(.top, mainGeometry.safeAreaInsets.top)
+                        .padding(.top, 10) // Push it slightly down from the top edge
+                        .padding(.bottom, 10)
 
                     // Play Area (Strict Box Container)
                     GeometryReader { playArea in
@@ -142,10 +142,22 @@ struct ContentView: View {
 
                             // START PROMPT
                             if !gameStarted && !gameOver {
+                                // Invisible tappable layer covering the entire box
+                                Color.clear
+                                    .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        withAnimation {
+                                            gameStarted = true
+                                        }
+                                    }
+                                    .zIndex(20)
+                                
                                 startPrompt(in: playArea.size)
+                                    .zIndex(21)
+                                    .allowsHitTesting(false) // Let taps pass through to the clear layer
                             }
                         }
-                        .clipShape(RoundedRectangle(cornerRadius: 24)) // Ensure nothing escapes visually
+                        .clipShape(RoundedRectangle(cornerRadius: 24))
                         .onAppear {
                             spawnSingleButton(in: playArea.size)
                         }
@@ -154,8 +166,8 @@ struct ContentView: View {
                             tickGame(in: playArea.size)
                         }
                     }
-                    .padding(16) // Padding from the screen edges
-                    .padding(.bottom, mainGeometry.safeAreaInsets.bottom + 10)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 16)
                 }
                 .blur(radius: gameOver ? 6 : 0)
 
@@ -165,7 +177,6 @@ struct ContentView: View {
                 }
             }
         }
-        .ignoresSafeArea()
     }
 
     // MARK: - Background
@@ -205,7 +216,7 @@ struct ContentView: View {
     var hudBar: some View {
         HStack {
             Label("\(points)", systemImage: "star.fill")
-                .font(.system(size: 20, weight: .bold, design: .rounded))
+                .font(.system(size: 24, weight: .bold, design: .rounded))
                 .foregroundStyle(
                     LinearGradient(colors: [.yellow, .orange], startPoint: .leading, endPoint: .trailing)
                 )
@@ -216,7 +227,7 @@ struct ContentView: View {
                 Image(systemName: "timer")
                     .foregroundColor(timeRemaining <= 5 ? .red : .white)
                 Text("\(timeRemaining)s")
-                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .font(.system(size: 24, weight: .bold, design: .rounded))
                     .foregroundColor(timeRemaining <= 5 ? .red : .white)
                     .animation(.easeInOut, value: timeRemaining)
                     .scaleEffect(timeRemaining <= 5 ? 1.2 : 1.0)
@@ -224,11 +235,9 @@ struct ContentView: View {
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 16)
-        .background(Color.black.opacity(0.30))
-        .overlay(
-            Divider().background(Color.white.opacity(0.08)),
-            alignment: .bottom
-        )
+        .background(Color.black.opacity(0.40))
+        .clipShape(Capsule())
+        .padding(.horizontal, 16)
     }
 
     // MARK: - Start Prompt
@@ -260,7 +269,6 @@ struct ContentView: View {
         let label: String = btn.isRed ? "✕" : "✓"
 
         return Button(action: {
-            // Because geometry depends on the parent playArea, passing the button tap upward
             handleTap(btn: btn)
         }) {
             ZStack {
@@ -303,7 +311,6 @@ struct ContentView: View {
         .buttonStyle(TapScaleStyle())
         .disabled(gameOver)
         .position(x: btn.x, y: btn.y)
-        // Smooth Pop-up transitions when spawned or removed
         .transition(.scale(scale: 0.1).combined(with: .opacity))
     }
 
@@ -331,7 +338,7 @@ struct ContentView: View {
                     .foregroundColor(.white.opacity(0.6))
 
                 Button(action: {
-                    resetGame(in: size) // Note: this size is screen size, but reset overrides it momentarily
+                    resetGame(in: size)
                 }) {
                     Text("Play Again")
                         .font(.system(size: 17, weight: .bold, design: .rounded))
@@ -399,12 +406,6 @@ struct ContentView: View {
             showEncourageMessage()
         }
 
-        // Parent size is roughly available. We use a proxy size for immediate reshuffle.
-        // We'll calculate a standard size since tap doesn't carry the direct geometry proxy.
-        // A safer way is to just trigger the movement using the last known geometry.
-        // We can just rely on the next tick, or recreate roughly.
-        // For simplicity, we just trigger random move using a fixed assumed frame or let the timer handle it.
-        // But instant feedback is better:
         let playAreaSize = CGSize(width: UIScreen.main.bounds.width - 32, height: UIScreen.main.bounds.height - 200)
         
         withAnimation(.spring(response: 0.35, dampingFraction: 0.65)) {
@@ -435,7 +436,6 @@ struct ContentView: View {
     // MARK: - Button Spawning & Overlap Logic
 
     func safeX(size: CGSize, pad: CGFloat) -> CGFloat {
-        // Ensure bounds are logical to prevent fatal errors
         let minX = pad
         let maxX = max(size.width - pad, minX)
         return CGFloat.random(in: minX...maxX)
@@ -447,7 +447,6 @@ struct ContentView: View {
         return CGFloat.random(in: minY...maxY)
     }
 
-    // Distance formula to check for overlaps
     func distanceBetween(x1: CGFloat, y1: CGFloat, x2: CGFloat, y2: CGFloat) -> CGFloat {
         return hypot(x2 - x1, y2 - y1)
     }
@@ -472,15 +471,13 @@ struct ContentView: View {
         var greenX: CGFloat = 0
         var greenY: CGFloat = 0
         
-        // Anti-Overlap Logic
-        let minimumAllowedDistance = padR + padG + 15 // radius1 + radius2 + 15pt gap
+        let minimumAllowedDistance = padR + padG + 15
         var attempts = 0
         
         repeat {
             greenX = safeX(size: size, pad: padG)
             greenY = safeY(size: size, pad: padG)
             attempts += 1
-            // Try to find a valid spot, fallback after 50 attempts to prevent infinite loops
         } while (distanceBetween(x1: redX, y1: redY, x2: greenX, y2: greenY) < minimumAllowedDistance) && (attempts < 50)
 
         buttons = [
@@ -490,7 +487,6 @@ struct ContentView: View {
     }
 
     func moveAllButtonsRandomly(in size: CGSize) {
-        // Generate entirely new buttons with new UUIDs so they trigger the "Pop" animation
         buttons = buttons.map { btn in
             let pad = btn.size / 2 + 10
             return GameButton(
