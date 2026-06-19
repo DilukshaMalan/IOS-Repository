@@ -11,7 +11,7 @@ import SwiftUI
 struct Light_It_UpApp: App {
     var body: some Scene {
         WindowGroup {
-            GridFlashView()
+            HomeView()
         }
     }
 }
