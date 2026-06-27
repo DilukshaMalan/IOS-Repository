@@ -96,6 +96,9 @@ struct PressScaleStyle: ButtonStyle {
 // MARK: - Main View
 struct GridFlashView: View {
 
+    // MARK: Persistent High Score
+    @AppStorage("gridFlashHighScore") private var highScore: Int = 0
+
     // Navigation
     @State private var screen: AppScreen = .modeSelect
     @State private var gameMode: GameMode = .classic
@@ -105,6 +108,7 @@ struct GridFlashView: View {
     @State private var totalScore: Int = 0
     @State private var levelScore: Int = 0
     @State private var missedCount: Int = 0
+    @State private var newHighScore: Bool = false   // flag for "NEW BEST!" banner
 
     // Grid
     @State private var tiles: [GridTile] = []
@@ -370,6 +374,26 @@ struct GridFlashView: View {
 
             Spacer()
 
+            // High score badge (centre)
+            VStack(spacing: 1) {
+                Text("BEST")
+                    .font(.system(size: 9, weight: .bold, design: .rounded))
+                    .foregroundColor(.white.opacity(0.35))
+                    .tracking(1)
+                Text("\(highScore)")
+                    .font(.system(size: 16, weight: .black, design: .rounded))
+                    .foregroundStyle(
+                        LinearGradient(colors: [.yellow, .orange], startPoint: .leading, endPoint: .trailing)
+                    )
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Color.yellow.opacity(0.10))
+            .clipShape(Capsule())
+            .overlay(Capsule().stroke(Color.yellow.opacity(0.25), lineWidth: 1))
+
+            Spacer()
+
             // Level badge
             VStack(spacing: 2) {
                 Text("LEVEL")
@@ -493,6 +517,11 @@ struct GridFlashView: View {
                 Text("🏆 You beat all 4 levels!")
                     .font(.system(size: 20, weight: .black, design: .rounded))
                     .foregroundColor(.yellow)
+                if newHighScore {
+                    Text("🎉 NEW BEST: \(highScore)!")
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .foregroundColor(.yellow.opacity(0.8))
+                }
                 actionButtons
             }
 
@@ -511,6 +540,19 @@ struct GridFlashView: View {
                     LinearGradient(colors: [.orange, .red], startPoint: .leading, endPoint: .trailing)
                 )
 
+            // New high score banner
+            if newHighScore {
+                Text("🎉 NEW BEST!")
+                    .font(.system(size: 16, weight: .black, design: .rounded))
+                    .foregroundColor(.yellow)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 8)
+                    .background(Color.yellow.opacity(0.18))
+                    .clipShape(Capsule())
+                    .overlay(Capsule().stroke(Color.yellow.opacity(0.5), lineWidth: 1))
+                    .transition(.scale.combined(with: .opacity))
+            }
+
             VStack(spacing: 6) {
                 Text("Final Score")
                     .font(.system(size: 14, weight: .medium, design: .rounded))
@@ -520,6 +562,16 @@ struct GridFlashView: View {
                     .foregroundStyle(
                         LinearGradient(colors: [.cyan, .purple], startPoint: .top, endPoint: .bottom)
                     )
+            }
+
+            // High score row
+            HStack(spacing: 8) {
+                Image(systemName: "trophy.fill")
+                    .foregroundColor(.yellow.opacity(0.7))
+                    .font(.system(size: 13))
+                Text("Best: \(highScore)")
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundColor(.white.opacity(0.45))
             }
 
             HStack(spacing: 16) {
@@ -554,6 +606,7 @@ struct GridFlashView: View {
             Button(action: {
                 currentLevelIndex = gameMode == .timeAttack ? currentLevelIndex : 0
                 totalScore = 0
+                newHighScore = false
                 startGame()
             }) {
                 Text("Play Again")
@@ -572,8 +625,9 @@ struct GridFlashView: View {
 
             Button(action: {
                 stopAllTimers()
-                screen = .modeSelect
+                newHighScore = false
                 totalScore = 0
+                screen = .modeSelect
             }) {
                 Text("Main Menu")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
@@ -704,20 +758,24 @@ struct GridFlashView: View {
     func endLevel() {
         stopAllTimers()
 
+        // Save high score
+        let finalScore = totalScore + levelScore
+        if finalScore > highScore {
+            highScore = finalScore
+            newHighScore = true
+        }
+
         // Classic: advance or game over based on score threshold
         if gameMode == .classic {
-            // Need at least 60% hit rate to advance
             let totalSpawnable = max(1, levelScore + missedCount)
             let accuracy = Double(levelScore) / Double(totalSpawnable)
 
             if accuracy >= 0.4 || currentLevelIndex == 0 {
-                // Level cleared (generous threshold for fun)
                 withAnimation { screen = .levelComplete }
             } else {
                 withAnimation { screen = .gameOver }
             }
         } else {
-            // Time attack: just show game over with score
             withAnimation { screen = .gameOver }
         }
     }
