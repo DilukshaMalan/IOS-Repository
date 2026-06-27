@@ -1,6 +1,9 @@
 //
-//  ContentView.swift
+//  TapFrenzyView.swift
 //  TapFrenzy
+//
+//  Redesigned with: Glassmorphism UI, split-button mechanic,
+//  encourage popups, 20-second game, red/green button logic.
 //
 
 import SwiftUI
@@ -11,7 +14,7 @@ let encourageMessages = ["Great! 🎯", "Super! ⚡", "Excellent! 🔥", "Amazin
 
 // MARK: - Button Model
 struct GameButton: Identifiable {
-    let id = UUID() // Changing ID forces a fresh pop-up animation
+    let id = UUID()
     var x: CGFloat
     var y: CGFloat
     var size: CGFloat
@@ -79,63 +82,22 @@ struct EncouragePopup: View {
     }
 }
 
-// MARK: - Main Menu (Navigation Root)
-struct ContentView: View {
-    var body: some View {
-        NavigationStack {
-            ZStack {
-                // Background
-                LinearGradient(
-                    colors: [
-                        Color(red: 0.05, green: 0.05, blue: 0.18),
-                        Color(red: 0.08, green: 0.04, blue: 0.25)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ).ignoresSafeArea()
-                
-                VStack(spacing: 40) {
-                    Text("TAP FRENZY")
-                        .font(.system(size: 46, weight: .black, design: .rounded))
-                        .foregroundStyle(
-                            LinearGradient(colors: [.cyan, .purple], startPoint: .leading, endPoint: .trailing)
-                        )
-                        .shadow(color: .cyan.opacity(0.5), radius: 10)
-                    
-                    NavigationLink(destination: TapFrenzyView()) {
-                        Text("PLAY GAME")
-                            .font(.system(size: 22, weight: .bold, design: .rounded))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 40)
-                            .padding(.vertical, 18)
-                            .background(
-                                LinearGradient(colors: [.green, .cyan], startPoint: .leading, endPoint: .trailing)
-                            )
-                            .clipShape(Capsule())
-                            .shadow(color: .green.opacity(0.4), radius: 15)
-                    }
-                    .buttonStyle(TapScaleStyle())
-                }
-            }
-        }
-    }
-}
-
-// MARK: - Game View
+// MARK: - Main Content View
 struct TapFrenzyView: View {
-    
-    // Allows us to navigate back to the main menu
-    @Environment(\.dismiss) private var dismiss
+
+    // MARK: Persistent High Score
+    @AppStorage("tapFrenzyHighScore") private var highScore: Int = 0
 
     // MARK: Game State
     @State private var points = 0
-    @State private var timeRemaining = 20
+    @State private var timeRemaining = 20          // ← 20 seconds
     @State private var gameStarted = false
     @State private var gameOver = false
+    @State private var newHighScore = false         // flag to show "NEW BEST!" banner
 
-    // MARK: Buttons
+    // MARK: Buttons (1 or 2)
     @State private var buttons: [GameButton] = []
-    @State private var baseSize: CGFloat = 130
+    @State private var baseSize: CGFloat = 130      // shrinks every second
 
     // MARK: Encourage Popup
     @State private var currentMessage: String? = nil
@@ -146,82 +108,58 @@ struct TapFrenzyView: View {
 
     // MARK: Body
     var body: some View {
-        GeometryReader { mainGeometry in
+        GeometryReader { geometry in
             ZStack {
+
                 // ── BACKGROUND ──────────────────────────────────────────
                 meshBackground
-                    .ignoresSafeArea()
 
                 // ── GAME LAYER ──────────────────────────────────────────
                 VStack(spacing: 0) {
-                    
-                    // Top HUD (Now includes Back Button)
+
+                    // Top HUD
                     hudBar
-                        .padding(.top, 10)
-                        .padding(.bottom, 10)
 
-                    // Play Area (Strict Box Container)
-                    GeometryReader { playArea in
-                        ZStack {
-                            // Visual border for the play area limit
-                            RoundedRectangle(cornerRadius: 24)
-                                .fill(Color.white.opacity(0.03))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 24)
-                                        .stroke(Color.white.opacity(0.15), style: StrokeStyle(lineWidth: 2, dash: [10, 5]))
-                                )
-
-                            // Encourage popup
-                            if let msg = currentMessage {
-                                EncouragePopup(message: msg)
-                                    .zIndex(10)
-                                    .position(x: playArea.size.width / 2, y: 50)
-                                    .animation(.spring(response: 0.3), value: currentMessage)
-                            }
-
-                            // Game Buttons
-                            ForEach(buttons) { btn in
-                                gameButtonView(btn: btn)
-                            }
-
-                            // START PROMPT
-                            if !gameStarted && !gameOver {
-                                // Invisible tappable layer covering the entire box
-                                Color.clear
-                                    .contentShape(Rectangle())
-                                    .onTapGesture {
-                                        withAnimation {
-                                            gameStarted = true
-                                        }
-                                    }
-                                    .zIndex(20)
-                                
-                                startPrompt(in: playArea.size)
-                                    .zIndex(21)
-                                    .allowsHitTesting(false)
-                            }
+                    // Play Area
+                    ZStack {
+                        // Encourage popup (floats in upper-center of play area)
+                        if let msg = currentMessage {
+                            EncouragePopup(message: msg)
+                                .zIndex(10)
+                                .position(x: geometry.size.width / 2,
+                                           y: 60)
+                                .animation(.spring(response: 0.3), value: currentMessage)
                         }
-                        .clipShape(RoundedRectangle(cornerRadius: 24))
-                        .onAppear {
-                            spawnSingleButton(in: playArea.size)
+
+                        // Game Buttons
+                        ForEach(buttons) { btn in
+                            gameButtonView(btn: btn, geometry: geometry)
                         }
-                        .onReceive(timer) { _ in
-                            guard gameStarted && !gameOver else { return }
-                            tickGame(in: playArea.size)
+
+                        // START PROMPT (before game begins)
+                        if !gameStarted && !gameOver {
+                            startPrompt(geometry: geometry)
                         }
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 16)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
                 }
                 .blur(radius: gameOver ? 6 : 0)
 
                 // ── SCORE OVERLAY ───────────────────────────────────────
                 if gameOver {
-                    scoreOverlay(in: mainGeometry.size)
+                    scoreOverlay(geometry: geometry)
                 }
             }
+            .onAppear {
+                spawnSingleButton(in: geometry.size)
+            }
+            .onReceive(timer) { _ in
+                guard gameStarted && !gameOver else { return }
+                tickGame(in: geometry.size)
+            }
         }
-        .navigationBarBackButtonHidden(true) // Hides default iOS back button so we can use our custom one
+        .ignoresSafeArea()
     }
 
     // MARK: - Background
@@ -237,6 +175,7 @@ struct TapFrenzyView: View {
                 endPoint: .bottomTrailing
             )
 
+            // Neon blobs for atmosphere
             Circle()
                 .fill(Color.purple.opacity(0.25))
                 .frame(width: 340, height: 340)
@@ -255,28 +194,38 @@ struct TapFrenzyView: View {
                 .blur(radius: 60)
                 .offset(x: 60, y: 100)
         }
+        .ignoresSafeArea()
     }
 
     // MARK: - HUD Bar
     var hudBar: some View {
         HStack {
-            // NAVIGATION BACK BUTTON
-            Button(action: {
-                dismiss() // Exits the game view
-            }) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundColor(.white)
-                    .padding(8)
-                    .background(Circle().fill(Color.white.opacity(0.2)))
-            }
-            .padding(.trailing, 4)
-
+            // Current score
             Label("\(points)", systemImage: "star.fill")
-                .font(.system(size: 24, weight: .bold, design: .rounded))
+                .font(.system(size: 20, weight: .bold, design: .rounded))
                 .foregroundStyle(
                     LinearGradient(colors: [.yellow, .orange], startPoint: .leading, endPoint: .trailing)
                 )
+
+            Spacer()
+
+            // High score badge (centre)
+            VStack(spacing: 1) {
+                Text("BEST")
+                    .font(.system(size: 9, weight: .bold, design: .rounded))
+                    .foregroundColor(.white.opacity(0.35))
+                    .tracking(1)
+                Text("\(highScore)")
+                    .font(.system(size: 16, weight: .black, design: .rounded))
+                    .foregroundStyle(
+                        LinearGradient(colors: [.yellow, .orange], startPoint: .leading, endPoint: .trailing)
+                    )
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Color.yellow.opacity(0.10))
+            .clipShape(Capsule())
+            .overlay(Capsule().stroke(Color.yellow.opacity(0.25), lineWidth: 1))
 
             Spacer()
 
@@ -284,28 +233,32 @@ struct TapFrenzyView: View {
                 Image(systemName: "timer")
                     .foregroundColor(timeRemaining <= 5 ? .red : .white)
                 Text("\(timeRemaining)s")
-                    .font(.system(size: 24, weight: .bold, design: .rounded))
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
                     .foregroundColor(timeRemaining <= 5 ? .red : .white)
                     .animation(.easeInOut, value: timeRemaining)
                     .scaleEffect(timeRemaining <= 5 ? 1.2 : 1.0)
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 16)
-        .background(Color.black.opacity(0.40))
-        .clipShape(Capsule())
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 24)
+        .padding(.top, 60)
+        .padding(.bottom, 16)
+        .background(Color.black.opacity(0.30))
+        .overlay(
+            Divider()
+                .background(Color.white.opacity(0.08)),
+            alignment: .bottom
+        )
     }
 
     // MARK: - Start Prompt
-    func startPrompt(in size: CGSize) -> some View {
+    func startPrompt(geometry: GeometryProxy) -> some View {
         VStack(spacing: 14) {
             Text("TAP FRENZY")
-                .font(.system(size: 32, weight: .black, design: .rounded))
+                .font(.system(size: 36, weight: .black, design: .rounded))
                 .foregroundStyle(
                     LinearGradient(colors: [.cyan, .purple], startPoint: .leading, endPoint: .trailing)
                 )
-            Text("Tap the \u{1F7E2} green button\nAvoid the \u{1F534} red button!")
+            Text("Tap the \u{1F7E2} green button to earn points\nAvoid the \u{1F534} red button!")
                 .font(.system(size: 15, weight: .medium, design: .rounded))
                 .foregroundColor(.white.opacity(0.7))
                 .multilineTextAlignment(.center)
@@ -314,26 +267,28 @@ struct TapFrenzyView: View {
                 .foregroundColor(.white.opacity(0.4))
                 .padding(.top, 4)
         }
-        .padding(24)
+        .padding(30)
         .glassCard()
-        .position(x: size.width / 2, y: size.height / 2)
+        .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
     }
 
     // MARK: - Game Button View
-    func gameButtonView(btn: GameButton) -> some View {
+    func gameButtonView(btn: GameButton, geometry: GeometryProxy) -> some View {
         let color: Color = btn.isRed ? .red : .green
         let glowColor: Color = btn.isRed ? Color.red.opacity(0.6) : Color.green.opacity(0.6)
         let label: String = btn.isRed ? "✕" : "✓"
 
         return Button(action: {
-            handleTap(btn: btn)
+            handleTap(btn: btn, in: geometry.size)
         }) {
             ZStack {
+                // Outer glow ring
                 Circle()
                     .fill(glowColor)
                     .blur(radius: 18)
                     .frame(width: btn.size + 24, height: btn.size + 24)
 
+                // Glass circle body
                 Circle()
                     .fill(.ultraThinMaterial)
                     .overlay(
@@ -349,6 +304,7 @@ struct TapFrenzyView: View {
                     )
                     .frame(width: btn.size, height: btn.size)
 
+                // Inner fill
                 Circle()
                     .fill(
                         LinearGradient(
@@ -359,6 +315,7 @@ struct TapFrenzyView: View {
                     )
                     .frame(width: btn.size - 8, height: btn.size - 8)
 
+                // Label
                 Text(label)
                     .font(.system(size: btn.size * 0.36, weight: .black, design: .rounded))
                     .foregroundColor(.white)
@@ -368,18 +325,35 @@ struct TapFrenzyView: View {
         .buttonStyle(TapScaleStyle())
         .disabled(gameOver)
         .position(x: btn.x, y: btn.y)
-        .transition(.scale(scale: 0.1).combined(with: .opacity))
+        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: btn.x)
+        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: btn.y)
+        .animation(.easeInOut(duration: 0.3), value: btn.size)
     }
 
     // MARK: - Score Overlay
-    func scoreOverlay(in size: CGSize) -> some View {
+    func scoreOverlay(geometry: GeometryProxy) -> some View {
         ZStack {
             Color.black.opacity(0.55).ignoresSafeArea()
 
             VStack(spacing: 22) {
                 Text("🏆 GAME OVER 🏆")
                     .font(.system(size: 30, weight: .black, design: .rounded))
-                    .foregroundStyle(LinearGradient(colors: [.yellow, .orange], startPoint: .leading, endPoint: .trailing))
+                    .foregroundStyle(
+                        LinearGradient(colors: [.yellow, .orange], startPoint: .leading, endPoint: .trailing)
+                    )
+
+                // New high score banner
+                if newHighScore {
+                    Text("🎉 NEW BEST!")
+                        .font(.system(size: 16, weight: .black, design: .rounded))
+                        .foregroundColor(.yellow)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 8)
+                        .background(Color.yellow.opacity(0.18))
+                        .clipShape(Capsule())
+                        .overlay(Capsule().stroke(Color.yellow.opacity(0.5), lineWidth: 1))
+                        .transition(.scale.combined(with: .opacity))
+                }
 
                 Text("Final Score")
                     .font(.system(size: 15, weight: .medium, design: .rounded))
@@ -387,7 +361,19 @@ struct TapFrenzyView: View {
 
                 Text("\(points)")
                     .font(.system(size: 86, weight: .black, design: .rounded))
-                    .foregroundStyle(LinearGradient(colors: [.cyan, .purple], startPoint: .top, endPoint: .bottom))
+                    .foregroundStyle(
+                        LinearGradient(colors: [.cyan, .purple], startPoint: .top, endPoint: .bottom)
+                    )
+
+                // High score row
+                HStack(spacing: 8) {
+                    Image(systemName: "trophy.fill")
+                        .foregroundColor(.yellow.opacity(0.7))
+                        .font(.system(size: 13))
+                    Text("Best: \(highScore)")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundColor(.white.opacity(0.45))
+                }
 
                 Text(scoreTagline)
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
@@ -395,29 +381,30 @@ struct TapFrenzyView: View {
                     .foregroundColor(.white.opacity(0.6))
 
                 Button(action: {
-                    resetGame(in: size)
+                    resetGame(in: geometry.size)
                 }) {
                     Text("Play Again")
                         .font(.system(size: 17, weight: .bold, design: .rounded))
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
-                        .background(LinearGradient(colors: [Color.green.opacity(0.85), Color.cyan.opacity(0.7)], startPoint: .leading, endPoint: .trailing))
+                        .background(
+                            LinearGradient(
+                                colors: [Color.green.opacity(0.85), Color.cyan.opacity(0.7)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
                         .clipShape(RoundedRectangle(cornerRadius: 16))
-                        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.2), lineWidth: 1))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16)
+                                .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                        )
                         .shadow(color: .green.opacity(0.4), radius: 12)
                 }
                 .buttonStyle(TapScaleStyle())
                 .padding(.horizontal, 10)
                 .padding(.top, 4)
-                
-                // Extra button to leave the game when it's over
-                Button(action: { dismiss() }) {
-                    Text("Main Menu")
-                        .font(.system(size: 15, weight: .medium, design: .rounded))
-                        .foregroundColor(.white.opacity(0.7))
-                }
-                .padding(.top, 10)
             }
             .padding(30)
             .glassCard()
@@ -426,6 +413,7 @@ struct TapFrenzyView: View {
         }
     }
 
+    // MARK: - Score Tagline
     var scoreTagline: String {
         switch points {
         case ..<0:   return "Better luck next time… 😅"
@@ -438,56 +426,68 @@ struct TapFrenzyView: View {
 
     // MARK: - Game Logic
 
+    /// Called every second while game is active
     func tickGame(in size: CGSize) {
         timeRemaining -= 1
-        if baseSize > 65 { baseSize -= 3 }
 
-        withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
-            if Bool.random() && buttons.count == 1 {
-                spawnTwoButtons(in: size)
-            } else if Bool.random() && buttons.count == 2 {
-                spawnSingleButton(in: size)
-            } else {
-                moveAllButtonsRandomly(in: size)
-            }
+        // Shrink the base size
+        if baseSize > 55 { baseSize -= 4 }
+
+        // Move / refresh buttons
+        if Bool.random() && buttons.count == 1 {
+            // ~50% chance to split into two buttons
+            spawnTwoButtons(in: size)
+        } else if Bool.random() && buttons.count == 2 {
+            // ~50% chance to merge back to one
+            spawnSingleButton(in: size)
+        } else {
+            moveAllButtonsRandomly(in: size)
         }
 
-        if timeRemaining <= 0 {
+        if timeRemaining == 0 {
+            // Save high score
+            if points > highScore {
+                highScore = points
+                newHighScore = true
+            }
             withAnimation(.spring()) { gameOver = true }
         }
     }
 
-    func handleTap(btn: GameButton) {
-        if !gameStarted { gameStarted = true }
+    /// Handle a button tap
+    func handleTap(btn: GameButton, in size: CGSize) {
+        if !gameStarted {
+            gameStarted = true
+        }
         guard !gameOver else { return }
 
         if btn.isRed {
+            // Red → deduct
             points = max(points - 1, 0)
             consecutiveTaps = 0
             hideEncourageMessage()
         } else {
+            // Green → earn
             points += 1
             consecutiveTaps += 1
             showEncourageMessage()
         }
 
-        let playAreaSize = CGSize(width: UIScreen.main.bounds.width - 32, height: UIScreen.main.bounds.height - 200)
-        
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.65)) {
-            if Bool.random() {
-                spawnTwoButtons(in: playAreaSize)
-            } else {
-                spawnSingleButton(in: playAreaSize)
-            }
+        // After every tap, reshuffle positions
+        if Bool.random() {
+            spawnTwoButtons(in: size)
+        } else {
+            spawnSingleButton(in: size)
         }
     }
 
+    /// Show a random encourage message, auto-dismiss after 0.9s
     func showEncourageMessage() {
         let msg = encourageMessages.randomElement() ?? "Great!"
         withAnimation(.spring(response: 0.3)) {
             currentMessage = msg
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
             withAnimation(.easeOut(duration: 0.3)) {
                 currentMessage = nil
             }
@@ -498,62 +498,55 @@ struct TapFrenzyView: View {
         withAnimation { currentMessage = nil }
     }
 
-    // MARK: - Button Spawning & Overlap Logic
+    // MARK: - Button Spawn Helpers
 
     func safeX(size: CGSize, pad: CGFloat) -> CGFloat {
-        let minX = pad
-        let maxX = max(size.width - pad, minX)
-        return CGFloat.random(in: minX...maxX)
+        CGFloat.random(in: pad...(size.width - pad))
     }
 
     func safeY(size: CGSize, pad: CGFloat) -> CGFloat {
-        let minY = pad
-        let maxY = max(size.height - pad, minY)
-        return CGFloat.random(in: minY...maxY)
-    }
-
-    func distanceBetween(x1: CGFloat, y1: CGFloat, x2: CGFloat, y2: CGFloat) -> CGFloat {
-        return hypot(x2 - x1, y2 - y1)
+        CGFloat.random(in: (pad + 110)...(size.height - pad - 30))
     }
 
     func spawnSingleButton(in size: CGSize) {
-        let pad = baseSize / 2 + 10
+        let sz = baseSize
+        let pad = sz / 2 + 20
         buttons = [
-            GameButton(x: safeX(size: size, pad: pad), y: safeY(size: size, pad: pad), size: baseSize, isRed: false)
+            GameButton(
+                x: safeX(size: size, pad: pad),
+                y: safeY(size: size, pad: pad),
+                size: sz,
+                isRed: false
+            )
         ]
     }
 
     func spawnTwoButtons(in size: CGSize) {
-        let redSize  = baseSize + 10
-        let greenSize = baseSize - 10
+        // Red is slightly larger, green is slightly smaller
+        let redSize  = baseSize + 18
+        let greenSize = baseSize - 14
 
-        let padR = redSize / 2 + 10
-        let padG = greenSize / 2 + 10
+        let padR = redSize  / 2 + 20
+        let padG = greenSize / 2 + 20
 
-        let redX = safeX(size: size, pad: padR)
-        let redY = safeY(size: size, pad: padR)
-
-        var greenX: CGFloat = 0
-        var greenY: CGFloat = 0
-        
-        let minimumAllowedDistance = padR + padG + 15
-        var attempts = 0
-        
-        repeat {
-            greenX = safeX(size: size, pad: padG)
-            greenY = safeY(size: size, pad: padG)
-            attempts += 1
-        } while (distanceBetween(x1: redX, y1: redY, x2: greenX, y2: greenY) < minimumAllowedDistance) && (attempts < 50)
-
-        buttons = [
-            GameButton(x: redX, y: redY, size: redSize, isRed: true),
-            GameButton(x: greenX, y: greenY, size: greenSize, isRed: false)
-        ]
+        let redBtn = GameButton(
+            x: safeX(size: size, pad: padR),
+            y: safeY(size: size, pad: padR),
+            size: redSize,
+            isRed: true
+        )
+        let greenBtn = GameButton(
+            x: safeX(size: size, pad: padG),
+            y: safeY(size: size, pad: padG),
+            size: greenSize,
+            isRed: false
+        )
+        buttons = [redBtn, greenBtn]
     }
 
     func moveAllButtonsRandomly(in size: CGSize) {
         buttons = buttons.map { btn in
-            let pad = btn.size / 2 + 10
+            let pad = btn.size / 2 + 20
             return GameButton(
                 x: safeX(size: size, pad: pad),
                 y: safeY(size: size, pad: pad),
@@ -573,10 +566,9 @@ struct TapFrenzyView: View {
             gameOver = false
             consecutiveTaps = 0
             currentMessage = nil
+            newHighScore = false
         }
-        
-        let playAreaSize = CGSize(width: UIScreen.main.bounds.width - 32, height: UIScreen.main.bounds.height - 200)
-        spawnSingleButton(in: playAreaSize)
+        spawnSingleButton(in: size)
     }
 }
 
@@ -590,5 +582,5 @@ struct TapScaleStyle: ButtonStyle {
 }
 
 #Preview {
-    ContentView()
+    TapFrenzyView()
 }

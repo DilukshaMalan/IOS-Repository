@@ -10,6 +10,10 @@ import SwiftUI
 // MARK: - Home View
 struct HomeView: View {
 
+    // Read each game's saved high score — updates live when returning from a game
+    @AppStorage("tapFrenzyHighScore") private var tapFrenzyBest: Int = 0
+    @AppStorage("gridFlashHighScore") private var gridFlashBest: Int = 0
+
     var body: some View {
         NavigationStack {
             ZStack {
@@ -63,7 +67,8 @@ struct HomeView: View {
                                 accentTop: Color(red: 0.1, green: 0.55, blue: 1.0),
                                 accentBottom: Color(red: 0.4, green: 0.1, blue: 0.9),
                                 decorSymbol: "●",
-                                stats: [("20s", "Game Time"), ("+1 / -1", "Score"), ("20+", "Frenzy")]
+                                stats: [("20s", "Game Time"), ("+1 / -1", "Score"), ("20+", "Frenzy")],
+                                highScore: tapFrenzyBest
                             )
                         }
                         .buttonStyle(HomeTilePress())
@@ -78,7 +83,8 @@ struct HomeView: View {
                                 accentTop: Color(red: 0.0, green: 0.75, blue: 0.85),
                                 accentBottom: Color(red: 0.1, green: 0.35, blue: 0.9),
                                 decorSymbol: "◼",
-                                stats: [("4", "Levels"), ("6×6", "Max Grid"), ("25s", "Final")]
+                                stats: [("4", "Levels"), ("6×6", "Max Grid"), ("25s", "Final")],
+                                highScore: gridFlashBest
                             )
                         }
                         .buttonStyle(HomeTilePress())
@@ -145,6 +151,7 @@ struct GameTile: View {
     let accentBottom: Color
     let decorSymbol: String
     let stats: [(String, String)]   // (value, label)
+    let highScore: Int              // persistent best score
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -194,7 +201,7 @@ struct GameTile: View {
             // Content
             VStack(alignment: .leading, spacing: 0) {
 
-                // Top row: tag + icon
+                // Top row: tag + best score badge + icon
                 HStack(alignment: .top) {
                     // Genre tag pill
                     Text(tag)
@@ -208,6 +215,23 @@ struct GameTile: View {
                         .overlay(Capsule().stroke(accentTop.opacity(0.35), lineWidth: 1))
 
                     Spacer()
+
+                    // Best score badge (only shown once a score exists)
+                    if highScore > 0 {
+                        HStack(spacing: 4) {
+                            Image(systemName: "trophy.fill")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(.yellow)
+                            Text("\(highScore)")
+                                .font(.system(size: 13, weight: .black, design: .rounded))
+                                .foregroundColor(.yellow)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.yellow.opacity(0.12))
+                        .clipShape(Capsule())
+                        .overlay(Capsule().stroke(Color.yellow.opacity(0.35), lineWidth: 1))
+                    }
 
                     // Icon bubble
                     ZStack {
